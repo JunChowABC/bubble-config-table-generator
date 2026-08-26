@@ -3,7 +3,7 @@ name: bubble-config-table-generator
 description: Generate or modify Bubble project Excel configuration tables from Chinese game-design documents, including table mapping, ID allocation, tlanguage_cn localization references, cross-table dependencies, and runnable test data inferred when values are missing. Use for Bubble 配置表、配表、测试配置、策划案转表、补测试数值 or related xlsx work under 策划/配置表.
 metadata:
   author: Bubble project
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Bubble 配置表生成器
@@ -24,9 +24,38 @@ metadata:
 
 - 源表目录：`策划/配置表/Table`。
 - 规范源文件：`策划/配置表/Bubble配置表_AI生成规范.md`、字段字典、关系字典和全表目录。
-- 默认输出：`策划/配置表/AI生成/<功能名或日期>/`。
+- 用户指定的输出目录或完整文件路径是硬约束，优先级最高；只有用户没有指定路径时，才使用默认输出 `策划/配置表/AI生成/<功能名或日期>/`。
 - 除非用户明确要求直接改正式表，否则不要覆盖 `Table` 中的源工作簿；应复制最接近的工作簿或 Sheet 到输出目录后修改。
 - 保留用户已有改动。只修改本次策划案涉及的表、语言条目和必要依赖。
+
+## 输出路径和工作簿归属
+
+写任何文件前先创建“工作簿归属计划”，并按照 [references/delivery-manifest-schema.md](references/delivery-manifest-schema.md) 在执行过程中维护 `generation-manifest.json`：
+
+- `requested_output_path`：用户原始指定路径；未指定时为 `null`。
+- `resolved_output_directory`：实际使用的绝对目录。
+- `feature_key`：本次系统功能的稳定标识。
+- `workbooks`：每个工作簿的路径、角色、Sheet 和归属依据。
+
+### 输出路径
+
+1. 用户指定目录时，所有最终工作簿、清单和 QA 报告都必须位于该目录。
+2. 用户指定完整 `.xlsx` 文件名时，主功能工作簿必须使用该文件名。
+3. 指定路径不可写时报告原路径和错误；不得静默改用默认、当前、临时或工具自带输出目录。
+4. 交付前把用户路径与实际绝对路径逐项比对，并检查所有文件真实存在。
+
+### 同功能工作簿聚合
+
+项目 59 个源工作簿中有 39 个包含多个正式导出 Sheet，单个工作簿最多 10 个导出 Sheet。以此作为硬约束：
+
+- 同一系统功能的主表、子表、明细表、池表、阶段表和参数表必须集中在一个主功能 `.xlsx` 中，以多个 `t*` Sheet 组织。
+- 现有功能新增 Sheet 时，加入该功能既有工作簿；全新功能需要多个表时，只创建一个主功能工作簿。
+- 禁止把同一功能的三个新增 Sheet 生成为三个 `.xlsx`，也禁止为每个 Sheet 默认新建同名工作簿。
+- 公共文本、公共条件、公共消耗、公共奖励、公共掉落等继续写入各自既有公共工作簿。
+- 引用其他系统既有表并需新增行时，该行保留在目标表原属工作簿。
+- 只有用户明确要求拆分，或现有 `Table` 已证明生命周期、负责人或导出批次确实独立，才允许多个功能工作簿，并在清单中写明证据。
+
+一个任务可以交付“一个主功能工作簿 + 被修改的公共/引用工作簿”，但主功能自身不得碎片化。
 
 ## 执行流程
 
@@ -46,7 +75,7 @@ metadata:
 - 关联表、数组外键及 `type + param` 分支；
 - 样式、列宽、冻结窗格和 `END` 位置。
 
-先向用户展示简洁的“表映射、字段映射、依赖、ID 候选、单位、语言条目、测试值来源、待确认项”，但当只有测试数值缺失时不要停下来等待确认，应继续生成。
+先确定用户输出路径，再展示简洁的“绝对输出路径、工作簿归属计划、表映射、字段映射、依赖、ID 候选、单位、语言条目、测试值来源、待确认项”。当只有测试数值缺失时不要停下来等待确认，应继续生成。
 
 ### 3. 建立依赖和 ID
 
@@ -65,6 +94,8 @@ metadata:
 
 ### 5. 生成工作簿
 
+- 先创建一个主功能工作簿，再把该功能的所有新增业务表写成其中的不同 Sheet；不要按 Sheet 创建多个工作簿。
+- 公共/引用表需要修改时，复制并修改其既有规范工作簿，不把公共 Sheet 复制进主功能工作簿。
 - 复制目标工作簿或同系统正式 Sheet 的真实样式，不发明全局皮肤。
 - 保持 6 行表头、B 列主键、数据从第 7 行开始、列 `END` 截断。
 - 只使用项目当前类型 `int/str/arr/bool`；`arr` 必须是严格 JSON。
@@ -82,7 +113,8 @@ metadata:
 4. 检查概率、权重、时间、金额、倍率单位及 `min <= max`。
 5. 渲染或打开所有受影响 Sheet，目视确认文字、列宽、行高、边框、冻结窗格和无裁切。
 6. 运行 `scripts/qa_generated_workbooks.py <xlsx...> --table-dir <Table目录>`；若当前环境没有 Python/openpyxl，执行同等检查并说明替代方式。
-7. 可用时用项目当前导表器试导出，核对客户端/服务端实际行列。
+7. 运行 `scripts/qa_delivery_layout.py generation-manifest.json`，确认实际输出目录与用户指定路径一致、同一 `feature_key` 只有一个主功能工作簿、所有声明的 Sheet 和文件都存在。
+8. 可用时用项目当前导表器试导出，核对客户端/服务端实际行列。
 
 本次新增或修改范围内的错误必须修复并重新回读；源工作簿中与本次无关的历史问题应标记为“既有风险”并保留证据，不擅自扩大修改范围。警告需要解决或在交付报告中逐项说明。
 
@@ -91,6 +123,8 @@ metadata:
 交付以下内容：
 
 - 生成或修改后的 `.xlsx`；
+- 每个最终文件的绝对路径，以及 `generation-manifest.json`；
+- 工作簿归属计划，明确主功能工作簿和公共/引用工作簿；
 - 受影响表和依赖顺序；
 - 新增/复用语言 ID、中文文本、消费者字段、占位符；
 - 测试数据清单：每行用途、S/T/D/A 来源、依据、触发条件、预期导出和游戏内结果；

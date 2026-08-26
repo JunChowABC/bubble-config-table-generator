@@ -4,6 +4,8 @@
 
 > 全局文本约束：所有玩家可见、需要展示或可能本地化的文本统一配置到 `tlanguage_cn`；其他业务表只保存并读取 `tlanguage_cn.id`，不得直接硬编码显示文案。
 
+> 工作簿组织约束：39/59 个工作簿包含多个正式导出 Sheet。同一系统功能的新增业务表必须集中在一个 `.xlsx` 内，以多个 Sheet 组织；公共表和既有引用表保留在各自工作簿。
+
 ## 0J_机制_条件表_tCommonCondition.xlsx
 
 ### tCommonCondition

@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.1",
+  "schema_version": "1.2",
   "snapshot_date": "2026-08-26",
   "source_directory": "D:\\Bubble\\策划\\配置表\\Table",
   "status": "基于当前源表和导表代码的审计版；可作为AI生成约束，不替代策划或程序正式确认",
@@ -13,7 +13,10 @@
       "str": 208,
       "arr": 256,
       "bool": 10
-    }
+    },
+    "single_export_sheet_workbooks": 20,
+    "multi_export_sheet_workbooks": 39,
+    "max_export_sheets_per_workbook": 10
   },
   "hard_rules": {
     "export_sheet_prefix": "t",
@@ -44,7 +47,57 @@
     "duplicate_sheet_names": "禁止；导出文件按Sheet名命名，同名Sheet可能互相覆盖",
     "array_syntax": "严格JSON数组，使用半角[]、逗号和双引号",
     "boolean_syntax": "True/False优先；导表器也兼容0/1",
-    "player_facing_text": "所有玩家可见、需要展示或可能本地化的文本必须配置在tlanguage_cn；其他业务表只保存tlanguage_cn.id，不得直接硬编码中文或其他显示文案"
+    "player_facing_text": "所有玩家可见、需要展示或可能本地化的文本必须配置在tlanguage_cn；其他业务表只保存tlanguage_cn.id，不得直接硬编码中文或其他显示文案",
+    "requested_output_path": "用户指定的输出目录或文件路径是硬约束；必须保存到该路径并在交付前按绝对路径回查存在性，不得擅自改到默认目录",
+    "feature_workbook_aggregation": "同一系统功能的新增业务表集中在一个xlsx中，以不同Sheet组织；禁止默认每个Sheet生成一个xlsx"
+  },
+  "output_and_workbook_policy": {
+    "path_precedence": "用户指定路径 > 本次任务已有输出路径 > 默认策划/配置表/AI生成/<功能名或日期>",
+    "exact_path": "若用户指定目录，所有本次交付文件必须位于该目录；若指定完整xlsx文件名，主功能工作簿必须使用该文件名",
+    "verification": "交付前解析并报告绝对路径，逐个检查文件存在；同时扫描是否误写到默认目录或其他临时目录",
+    "feature_rule": "一个系统功能对应一个主功能工作簿；主表、子表、明细表、池表、阶段表、参数表等使用同一xlsx内的不同t* Sheet",
+    "observed_evidence": {
+      "workbooks": 59,
+      "single_export_sheet_workbooks": 20,
+      "multi_export_sheet_workbooks": 39,
+      "max_export_sheets_per_workbook": 10,
+      "examples": {
+        "C_菜品表_tFood.xlsx": [
+          "tFoodType",
+          "tFoodIngredient",
+          "tFood",
+          "tLvFood",
+          "tFoodCollectReward",
+          "tFoodCollectGroup",
+          "tFoodCombo"
+        ],
+        "C_抽卡表_tGachaPool.xlsx": [
+          "tSubGacha",
+          "tGacha",
+          "tPool",
+          "tGuaranteed",
+          "tSpReward",
+          "tGachaInfo"
+        ],
+        "J_家具商店表_tShop.xlsx": [
+          "tShop",
+          "tShopCustom",
+          "tShopPool",
+          "tDecoPlace",
+          "tShopDecoration",
+          "tShopRefresh",
+          "tDecoShopTheme",
+          "tDecoShopMoudel",
+          "tDecoShop"
+        ]
+      }
+    },
+    "exceptions": [
+      "公共文本、公共条件、公共消耗、公共奖励、公共掉落等写入各自既有公共工作簿",
+      "引用其他系统的既有表时，新增行留在该表原属工作簿",
+      "用户明确要求拆分，或现有Table中已有独立工作簿边界且生命周期/负责人/导出批次确实不同"
+    ],
+    "prewrite_manifest": "写xlsx前输出工作簿归属计划：功能、目标xlsx、Sheet、角色(feature/shared/referenced)、归属依据；没有计划不得开始写文件"
   },
   "localization_rules": {
     "language_table": "tlanguage_cn",
@@ -81,7 +134,9 @@
     "references": "引用现有目标ID；若依赖项也新增，先生成基础表再生成业务表",
     "localization": "先提取全部玩家可见文本并配置tlanguage_cn，再让业务表引用语言ID；禁止在业务表str字段中直接写显示文案",
     "formulas": "导出区优先写最终静态值；若必须用公式，交付前用Excel兼容引擎重算并确认缓存值存在",
-    "test_rows": "至少覆盖正常、边界和分支三类有效数据；非法样例放END之后或非t测试Sheet"
+    "test_rows": "至少覆盖正常、边界和分支三类有效数据；非法样例放END之后或非t测试Sheet",
+    "output_path": "严格使用用户指定输出路径；只有用户未指定时才使用默认输出目录",
+    "workbook_layout": "同一功能新增表合并进同一xlsx的多个Sheet；公共表和既有引用表保留在各自规范工作簿"
   },
   "test_data_inference_policy": {
     "trigger": "策划案未提供部分或全部配置数值时自动启用；不得仅因缺少测试数值而停止生成",
