@@ -1,9 +1,9 @@
 ---
 name: bubble-config-table-generator
-description: Generate or modify Bubble project Excel configuration tables from Chinese game-design documents, including table mapping, ID allocation, tlanguage_cn localization references, cross-table dependencies, and runnable test data inferred when values are missing. Use for Bubble 配置表、配表、测试配置、策划案转表、补测试数值 or related xlsx work under 策划/配置表.
+description: Generate or modify Bubble project Excel configuration tables from Chinese game-design documents, including requested-path delivery, full copies of existing dependency workbooks, table mapping, ID allocation, tlanguage_cn references, cross-table dependencies, and runnable inferred test data. Use for Bubble 配置表、配表、测试配置、策划案转表、补测试数值 or related xlsx work under 策划/配置表.
 metadata:
   author: Bubble project
-  version: "1.1.0"
+  version: "1.2.0"
 ---
 
 # Bubble 配置表生成器
@@ -25,7 +25,8 @@ metadata:
 - 源表目录：`策划/配置表/Table`。
 - 规范源文件：`策划/配置表/Bubble配置表_AI生成规范.md`、字段字典、关系字典和全表目录。
 - 用户指定的输出目录或完整文件路径是硬约束，优先级最高；只有用户没有指定路径时，才使用默认输出 `策划/配置表/AI生成/<功能名或日期>/`。
-- 除非用户明确要求直接改正式表，否则不要覆盖 `Table` 中的源工作簿；应复制最接近的工作簿或 Sheet 到输出目录后修改。
+- 把 `Table` 中的源工作簿视为只读规范源；本生成工作流不覆盖源文件，应把目标 Sheet 原属的完整工作簿复制到输出目录后修改。
+- 本次功能需要使用任何既有配置表时，必须把该表原属 `.xlsx` 整本复制到输出目录，在副本中配置本系统需要的测试数据；禁止直接修改 `Table` 源文件或只摘取单个 Sheet。
 - 保留用户已有改动。只修改本次策划案涉及的表、语言条目和必要依赖。
 
 ## 输出路径和工作簿归属
@@ -35,7 +36,7 @@ metadata:
 - `requested_output_path`：用户原始指定路径；未指定时为 `null`。
 - `resolved_output_directory`：实际使用的绝对目录。
 - `feature_key`：本次系统功能的稳定标识。
-- `workbooks`：每个工作簿的路径、角色、Sheet 和归属依据。
+- `workbooks`：每个工作簿的源路径、目标路径、角色、复制动作、Sheet、测试行和归属依据。
 
 ### 输出路径
 
@@ -51,11 +52,24 @@ metadata:
 - 同一系统功能的主表、子表、明细表、池表、阶段表和参数表必须集中在一个主功能 `.xlsx` 中，以多个 `t*` Sheet 组织。
 - 现有功能新增 Sheet 时，加入该功能既有工作簿；全新功能需要多个表时，只创建一个主功能工作簿。
 - 禁止把同一功能的三个新增 Sheet 生成为三个 `.xlsx`，也禁止为每个 Sheet 默认新建同名工作簿。
-- 公共文本、公共条件、公共消耗、公共奖励、公共掉落等继续写入各自既有公共工作簿。
-- 引用其他系统既有表并需新增行时，该行保留在目标表原属工作簿。
+- 公共文本、公共条件、公共消耗、公共奖励、公共掉落等继续写入各自原属公共工作簿在输出目录中的完整副本。
+- 本次需要使用的公共或其他系统既有表，其原属工作簿必须整本复制到指定输出目录；测试行写入副本中的原属 Sheet。
 - 只有用户明确要求拆分，或现有 `Table` 已证明生命周期、负责人或导出批次确实独立，才允许多个功能工作簿，并在清单中写明证据。
 
 一个任务可以交付“一个主功能工作簿 + 被修改的公共/引用工作簿”，但主功能自身不得碎片化。
+
+### 既有配置表复制与测试数据
+
+只要本系统测试链路直接使用既有功能表、公共表或其他系统表，就必须执行以下规则：
+
+1. 从 `Table` 找到目标 Sheet 的原属工作簿，把该 `.xlsx` 整本复制到用户指定输出目录；同一源工作簿只复制一次。
+2. 保留源工作簿全部 Sheet、公式、样式、列宽、冻结窗格和既有数据，不只复制所需 Sheet，不把公共/引用 Sheet 并入主功能工作簿。
+3. 所有新增或修改只发生在输出目录副本；禁止直接修改 `Table` 源工作簿。
+4. 在副本的原属 Sheet 中新增或修改本系统需要的测试数据，保证主功能行引用的依赖 ID 在交付文件内存在；不能只复制工作簿而不配置测试行。
+5. 若主功能本身已有工作簿，复制后的副本就是唯一主功能工作簿，在该副本中新增 Sheet 或测试行，不另建第二个主功能工作簿。
+6. 在 `generation-manifest.json` 中为每个既有副本记录 `source_path`、`delivery_action=copied_and_modified`、`copy_scope=full_workbook`，并逐条记录测试数据的 Sheet、ID、`added/updated` 动作和用途。
+
+具体字段和正反例见 [references/delivery-manifest-schema.md](references/delivery-manifest-schema.md)。
 
 ## 执行流程
 
@@ -75,7 +89,7 @@ metadata:
 - 关联表、数组外键及 `type + param` 分支；
 - 样式、列宽、冻结窗格和 `END` 位置。
 
-先确定用户输出路径，再展示简洁的“绝对输出路径、工作簿归属计划、表映射、字段映射、依赖、ID 候选、单位、语言条目、测试值来源、待确认项”。当只有测试数值缺失时不要停下来等待确认，应继续生成。
+先确定用户输出路径，再展示简洁的“绝对输出路径、工作簿归属计划、既有工作簿复制清单、表映射、字段映射、依赖、ID 候选、单位、语言条目、测试值来源、待确认项”。当只有测试数值缺失时不要停下来等待确认，应继续生成。
 
 ### 3. 建立依赖和 ID
 
@@ -94,8 +108,8 @@ metadata:
 
 ### 5. 生成工作簿
 
-- 先创建一个主功能工作簿，再把该功能的所有新增业务表写成其中的不同 Sheet；不要按 Sheet 创建多个工作簿。
-- 公共/引用表需要修改时，复制并修改其既有规范工作簿，不把公共 Sheet 复制进主功能工作簿。
+- 若主功能已有工作簿，先整本复制到输出目录并把它作为唯一主功能工作簿；若是全新功能，才新建一个主功能工作簿。把该功能的所有新增业务表写成其中的不同 Sheet，不要按 Sheet 创建多个工作簿。
+- 对所有本次使用的既有公共/引用表，整本复制其原属规范工作簿到输出目录，并在副本中写入本系统测试数据；不把公共/引用 Sheet 复制进主功能工作簿。
 - 复制目标工作簿或同系统正式 Sheet 的真实样式，不发明全局皮肤。
 - 保持 6 行表头、B 列主键、数据从第 7 行开始、列 `END` 截断。
 - 只使用项目当前类型 `int/str/arr/bool`；`arr` 必须是严格 JSON。
@@ -113,7 +127,7 @@ metadata:
 4. 检查概率、权重、时间、金额、倍率单位及 `min <= max`。
 5. 渲染或打开所有受影响 Sheet，目视确认文字、列宽、行高、边框、冻结窗格和无裁切。
 6. 运行 `scripts/qa_generated_workbooks.py <xlsx...> --table-dir <Table目录>`；若当前环境没有 Python/openpyxl，执行同等检查并说明替代方式。
-7. 运行 `scripts/qa_delivery_layout.py generation-manifest.json`，确认实际输出目录与用户指定路径一致、同一 `feature_key` 只有一个主功能工作簿、所有声明的 Sheet 和文件都存在。
+7. 运行 `scripts/qa_delivery_layout.py generation-manifest.json`，确认实际输出目录与用户指定路径一致、同一 `feature_key` 只有一个主功能工作簿、所有声明的 Sheet 和文件都存在；所有既有依赖均为完整工作簿副本，测试行相对源文件确实新增或修改。
 8. 可用时用项目当前导表器试导出，核对客户端/服务端实际行列。
 
 本次新增或修改范围内的错误必须修复并重新回读；源工作簿中与本次无关的历史问题应标记为“既有风险”并保留证据，不擅自扩大修改范围。警告需要解决或在交付报告中逐项说明。
@@ -125,6 +139,7 @@ metadata:
 - 生成或修改后的 `.xlsx`；
 - 每个最终文件的绝对路径，以及 `generation-manifest.json`；
 - 工作簿归属计划，明确主功能工作簿和公共/引用工作簿；
+- 既有工作簿复制清单：源文件、输出副本、完整复制验证，以及副本中新增/修改的测试 Sheet 和 ID；
 - 受影响表和依赖顺序；
 - 新增/复用语言 ID、中文文本、消费者字段、占位符；
 - 测试数据清单：每行用途、S/T/D/A 来源、依据、触发条件、预期导出和游戏内结果；

@@ -14,10 +14,28 @@ except ImportError as exc:
 
 
 VALID_ROLES = {"feature", "shared", "referenced"}
+VALID_ACTIONS = {"created", "copied_and_modified"}
+VALID_TEST_OPERATIONS = {"added", "updated"}
 
 
 def normalized(path: Path) -> str:
     return os.path.normcase(os.path.normpath(str(path.resolve())))
+
+
+def same_id(value: Any, expected: Any) -> bool:
+    if value is None or expected is None:
+        return False
+    return str(value).strip() == str(expected).strip()
+
+
+def rows_for_id(worksheet, expected_id: Any) -> list[tuple[Any, ...]]:
+    matches = []
+    for row in worksheet.iter_rows(min_row=7, values_only=True):
+        if row and str(row[0] or "").strip().lower() == "end":
+            break
+        if len(row) > 1 and same_id(row[1], expected_id):
+            matches.append(tuple(row))
+    return matches
 
 
 def main() -> int:
@@ -66,6 +84,7 @@ def main() -> int:
 
     feature_entries = []
     seen_paths: set[str] = set()
+    seen_sources: dict[str, str] = {}
     declared_sheets: dict[str, str] = {}
 
     for index, entry in enumerate(workbooks):
@@ -81,6 +100,12 @@ def main() -> int:
                 add(errors, "FEATURE_KEY_MISMATCH", "主功能工作簿的feature_key与清单不一致", index=index)
         elif not str(entry.get("reason") or "").strip():
             add(errors, "MISSING_EXCEPTION_REASON", "公共或引用工作簿必须说明归属依据", index=index)
+
+        action = entry.get("delivery_action")
+        if action not in VALID_ACTIONS:
+            add(errors, "BAD_DELIVERY_ACTION", "delivery_action必须为created或copied_and_modified", index=index, delivery_action=action)
+        if role in {"shared", "referenced"} and action != "copied_and_modified":
+            add(errors, "EXISTING_DEPENDENCY_NOT_COPIED", "公共或引用工作簿必须整本复制后在副本中配置测试数据", index=index, role=role)
 
         raw_path = entry.get("path")
         if not raw_path:
@@ -106,7 +131,6 @@ def main() -> int:
             continue
         wb = load_workbook(workbook_path, read_only=True, data_only=False)
         actual_sheets = set(wb.sheetnames)
-        wb.close()
         for sheet in sheets:
             if sheet not in actual_sheets:
                 add(errors, "SHEET_NOT_FOUND", "清单声明的Sheet不在工作簿中", path=str(workbook_path), sheet=sheet)
@@ -114,6 +138,84 @@ def main() -> int:
             if previous and previous != path_key:
                 add(errors, "SHEET_SPLIT_ACROSS_WORKBOOKS", "同一Sheet被分配到多个工作簿", sheet=sheet)
             declared_sheets[sheet] = path_key
+
+        source_value = entry.get("source_path")
+        if action == "created":
+            if source_value:
+                add(errors, "CREATED_WORKBOOK_HAS_SOURCE", "created工作簿不应声明source_path；既有工作簿应使用copied_and_modified", path=str(workbook_path))
+            wb.close()
+            continue
+
+        if not source_value:
+            add(errors, "MISSING_SOURCE_PATH", "既有工作簿副本必须声明source_path", path=str(workbook_path))
+            wb.close()
+            continue
+
+        source_candidate = Path(source_value).expanduser()
+        if not source_candidate.is_absolute():
+            add(errors, "SOURCE_PATH_NOT_ABSOLUTE", "source_path必须是绝对路径", source_path=str(source_candidate))
+        source_path = source_candidate.resolve()
+        source_key = normalized(source_path)
+        if source_key == path_key:
+            add(errors, "SOURCE_OVERWRITTEN", "交付副本不能与源工作簿使用同一路径", path=str(workbook_path))
+        previous_target = seen_sources.get(source_key)
+        if previous_target and previous_target != path_key:
+            add(errors, "SOURCE_COPIED_MULTIPLE_TIMES", "同一源工作簿只能复制成一个交付副本", source_path=str(source_path))
+        seen_sources[source_key] = path_key
+        if entry.get("copy_scope") != "full_workbook":
+            add(errors, "PARTIAL_WORKBOOK_COPY", "既有配置必须整本复制，copy_scope必须为full_workbook", path=str(workbook_path))
+        if not source_path.is_file():
+            add(errors, "SOURCE_WORKBOOK_NOT_FOUND", "source_path指向的源工作簿不存在", source_path=str(source_path))
+            wb.close()
+            continue
+
+        source_wb = load_workbook(source_path, read_only=True, data_only=False)
+        missing_source_sheets = sorted(set(source_wb.sheetnames) - actual_sheets)
+        if missing_source_sheets:
+            add(errors, "SOURCE_SHEETS_NOT_PRESERVED", "交付副本没有保留源工作簿的全部Sheet", path=str(workbook_path), missing_sheets=missing_source_sheets)
+
+        test_data = entry.get("test_data")
+        if not isinstance(test_data, list) or not test_data:
+            add(errors, "MISSING_DEPENDENCY_TEST_DATA", "既有工作簿副本必须配置并声明本系统需要的测试数据", path=str(workbook_path))
+            test_data = []
+
+        for test_index, test_row in enumerate(test_data):
+            if not isinstance(test_row, dict):
+                add(errors, "BAD_TEST_DATA_ENTRY", "test_data条目必须是对象", path=str(workbook_path), test_index=test_index)
+                continue
+            sheet = test_row.get("sheet")
+            row_id = test_row.get("id")
+            operation = test_row.get("operation")
+            purpose = str(test_row.get("purpose") or "").strip()
+            if sheet not in actual_sheets:
+                add(errors, "TEST_DATA_SHEET_NOT_FOUND", "测试数据Sheet不在交付副本中", path=str(workbook_path), sheet=sheet)
+                continue
+            if sheet not in sheets:
+                add(errors, "TEST_DATA_SHEET_NOT_DECLARED", "测试数据Sheet必须列入workbooks[].sheets", path=str(workbook_path), sheet=sheet)
+            if row_id is None or str(row_id).strip() == "":
+                add(errors, "MISSING_TEST_DATA_ID", "测试数据必须声明B列ID", path=str(workbook_path), sheet=sheet, test_index=test_index)
+                continue
+            if operation not in VALID_TEST_OPERATIONS:
+                add(errors, "BAD_TEST_DATA_OPERATION", "测试数据operation必须为added或updated", path=str(workbook_path), sheet=sheet, id=row_id, operation=operation)
+                continue
+            if not purpose:
+                add(errors, "MISSING_TEST_DATA_PURPOSE", "测试数据必须说明本系统测试用途", path=str(workbook_path), sheet=sheet, id=row_id)
+
+            target_rows = rows_for_id(wb[sheet], row_id)
+            if len(target_rows) != 1:
+                add(errors, "TEST_DATA_ID_NOT_UNIQUE_IN_COPY", "测试ID在交付副本中必须且只能存在一行", path=str(workbook_path), sheet=sheet, id=row_id, matches=len(target_rows))
+                continue
+            source_rows = rows_for_id(source_wb[sheet], row_id) if sheet in source_wb.sheetnames else []
+            if operation == "added" and source_rows:
+                add(errors, "TEST_DATA_NOT_ADDED", "added测试ID已存在于源工作簿，不能证明是本次新增", path=str(workbook_path), sheet=sheet, id=row_id)
+            if operation == "updated":
+                if len(source_rows) != 1:
+                    add(errors, "UPDATED_TEST_DATA_NOT_IN_SOURCE", "updated测试ID在源工作簿中必须且只能存在一行", source_path=str(source_path), sheet=sheet, id=row_id, matches=len(source_rows))
+                elif target_rows[0] == source_rows[0]:
+                    add(errors, "UPDATED_TEST_DATA_UNCHANGED", "updated测试行与源工作簿完全相同，副本未实际配置测试数据", path=str(workbook_path), sheet=sheet, id=row_id)
+
+        source_wb.close()
+        wb.close()
 
     if len(feature_entries) != 1:
         add(errors, "FEATURE_WORKBOOK_FRAGMENTATION", "同一个feature_key必须且只能有一个主功能工作簿", feature_key=feature_key, feature_workbook_count=len(feature_entries))

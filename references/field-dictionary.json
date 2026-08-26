@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.2",
+  "schema_version": "1.3",
   "snapshot_date": "2026-08-26",
   "source_directory": "D:\\Bubble\\策划\\配置表\\Table",
   "status": "基于当前源表和导表代码的审计版；可作为AI生成约束，不替代策划或程序正式确认",
@@ -49,7 +49,8 @@
     "boolean_syntax": "True/False优先；导表器也兼容0/1",
     "player_facing_text": "所有玩家可见、需要展示或可能本地化的文本必须配置在tlanguage_cn；其他业务表只保存tlanguage_cn.id，不得直接硬编码中文或其他显示文案",
     "requested_output_path": "用户指定的输出目录或文件路径是硬约束；必须保存到该路径并在交付前按绝对路径回查存在性，不得擅自改到默认目录",
-    "feature_workbook_aggregation": "同一系统功能的新增业务表集中在一个xlsx中，以不同Sheet组织；禁止默认每个Sheet生成一个xlsx"
+    "feature_workbook_aggregation": "同一系统功能的新增业务表集中在一个xlsx中，以不同Sheet组织；禁止默认每个Sheet生成一个xlsx",
+    "existing_dependency_copy": "本系统测试配置需要使用任何既有配置表时，必须把该表原属xlsx整本复制到指定输出目录，在副本中写入本系统需要的测试数据；禁止直接修改Table源表或只复制单个Sheet"
   },
   "output_and_workbook_policy": {
     "path_precedence": "用户指定路径 > 本次任务已有输出路径 > 默认策划/配置表/AI生成/<功能名或日期>",
@@ -93,11 +94,18 @@
       }
     },
     "exceptions": [
-      "公共文本、公共条件、公共消耗、公共奖励、公共掉落等写入各自既有公共工作簿",
-      "引用其他系统的既有表时，新增行留在该表原属工作簿",
+      "公共文本、公共条件、公共消耗、公共奖励、公共掉落等使用各自既有公共工作簿的完整副本，并在副本中新增本系统测试数据",
+      "引用其他系统的既有表时，把该表原属工作簿整本复制到输出目录，新增行留在副本中的原属Sheet",
       "用户明确要求拆分，或现有Table中已有独立工作簿边界且生命周期/负责人/导出批次确实不同"
     ],
-    "prewrite_manifest": "写xlsx前输出工作簿归属计划：功能、目标xlsx、Sheet、角色(feature/shared/referenced)、归属依据；没有计划不得开始写文件"
+    "existing_workbook_copy": {
+      "trigger": "主功能表、公共表或引用表只要来自现有Table工作簿且被本次测试链路使用，就必须进入交付",
+      "copy_scope": "复制原属xlsx的完整工作簿，保留全部Sheet、公式、样式、列宽、冻结窗格和既有数据；同一源工作簿只复制一次",
+      "write_target": "所有新增或修改只发生在输出目录副本；禁止修改策划/配置表/Table中的源文件",
+      "test_data": "在副本的原属Sheet中写入本系统需要的测试行；清单逐行记录Sheet、ID、added/updated动作和用途",
+      "verification": "比较源工作簿和交付副本：源Sheet集合必须全部保留，added行在源中不存在而在副本中存在，updated行必须与源行不同"
+    },
+    "prewrite_manifest": "写xlsx前输出工作簿归属计划：功能、源xlsx、目标xlsx、Sheet、角色(feature/shared/referenced)、动作(created/copied_and_modified)、测试行、归属依据；没有计划不得开始写文件"
   },
   "localization_rules": {
     "language_table": "tlanguage_cn",
@@ -136,7 +144,7 @@
     "formulas": "导出区优先写最终静态值；若必须用公式，交付前用Excel兼容引擎重算并确认缓存值存在",
     "test_rows": "至少覆盖正常、边界和分支三类有效数据；非法样例放END之后或非t测试Sheet",
     "output_path": "严格使用用户指定输出路径；只有用户未指定时才使用默认输出目录",
-    "workbook_layout": "同一功能新增表合并进同一xlsx的多个Sheet；公共表和既有引用表保留在各自规范工作簿"
+    "workbook_layout": "同一功能新增表合并进同一xlsx的多个Sheet；本次使用的既有功能/公共/引用工作簿整本复制到指定输出目录，在副本中写入本系统测试数据"
   },
   "test_data_inference_policy": {
     "trigger": "策划案未提供部分或全部配置数值时自动启用；不得仅因缺少测试数值而停止生成",
