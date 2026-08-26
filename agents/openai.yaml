@@ -1,0 +1,6 @@
+interface:
+  display_name: "Bubble 配置表生成器"
+  short_description: "依据 Bubble 项目规范生成配置表、关联数据与可运行测试数值"
+  default_prompt: "使用 $bubble-config-table-generator 根据这份策划案生成 Bubble 项目配置表并补齐可运行测试数据。"
+policy:
+  allow_implicit_invocation: true
