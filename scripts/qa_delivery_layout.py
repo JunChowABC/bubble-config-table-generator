@@ -16,6 +16,11 @@ except ImportError as exc:
 VALID_ROLES = {"feature", "shared", "referenced"}
 VALID_ACTIONS = {"created", "copied_and_modified"}
 VALID_TEST_OPERATIONS = {"added", "updated"}
+VALID_ID_SCOPES = {"sheet", "module", "parent"}
+VALID_ID_KINDS = {"new", "derived_child", "test", "reused", "updated"}
+VALID_ID_SOURCES = {"S", "T", "D", "A"}
+VALID_ID_STATUSES = {"reused", "candidate", "confirmed"}
+INT32_MAX = 2_147_483_647
 
 
 def normalized(path: Path) -> str:
@@ -84,6 +89,7 @@ def main() -> int:
 
     feature_entries = []
     seen_paths: set[str] = set()
+    workbook_paths: dict[str, Path] = {}
     seen_sources: dict[str, str] = {}
     declared_sheets: dict[str, str] = {}
 
@@ -117,6 +123,7 @@ def main() -> int:
         if path_key in seen_paths:
             add(errors, "DUPLICATE_WORKBOOK_ENTRY", "同一工作簿在清单中重复出现", path=str(workbook_path))
         seen_paths.add(path_key)
+        workbook_paths[path_key] = workbook_path
         if workbook_path.suffix.lower() != ".xlsx":
             add(errors, "BAD_WORKBOOK_EXTENSION", "配置工作簿必须为xlsx", path=str(workbook_path))
         if normalized(workbook_path.parent) != normalized(output_dir):
@@ -217,6 +224,60 @@ def main() -> int:
         source_wb.close()
         wb.close()
 
+    id_allocations = data.get("id_allocations")
+    if not isinstance(id_allocations, list) or not id_allocations:
+        add(errors, "MISSING_ID_PLAN", "id_allocations必须是非空数组，记录本次新增或修改的每个ID")
+        id_allocations = []
+    seen_allocations: set[tuple[str, int]] = set()
+    for allocation_index, allocation in enumerate(id_allocations):
+        if not isinstance(allocation, dict):
+            add(errors, "BAD_ID_ALLOCATION", "id_allocations条目必须是对象", index=allocation_index)
+            continue
+        sheet = allocation.get("sheet")
+        row_id = allocation.get("id")
+        scope = allocation.get("scope")
+        kind = allocation.get("kind")
+        source = allocation.get("source")
+        status = allocation.get("status")
+        rule = str(allocation.get("allocation_rule") or "").strip()
+        parent_id = allocation.get("parent_id")
+        if not isinstance(sheet, str) or not sheet.strip():
+            add(errors, "MISSING_ID_ALLOCATION_SHEET", "ID台账必须声明sheet", index=allocation_index)
+            continue
+        if not isinstance(row_id, int) or isinstance(row_id, bool) or not (0 < row_id <= INT32_MAX):
+            add(errors, "BAD_ID_ALLOCATION_VALUE", "ID台账中的id必须是Int32范围内的正整数", sheet=sheet, id=row_id)
+            continue
+        if scope not in VALID_ID_SCOPES:
+            add(errors, "BAD_ID_ALLOCATION_SCOPE", "ID台账scope必须为sheet/module/parent", sheet=sheet, id=row_id, scope=scope)
+        if kind not in VALID_ID_KINDS:
+            add(errors, "BAD_ID_ALLOCATION_KIND", "ID台账kind不在允许值内", sheet=sheet, id=row_id, kind=kind)
+        if source not in VALID_ID_SOURCES:
+            add(errors, "BAD_ID_ALLOCATION_SOURCE", "ID台账source必须为S/T/D/A", sheet=sheet, id=row_id, source=source)
+        if status not in VALID_ID_STATUSES:
+            add(errors, "BAD_ID_ALLOCATION_STATUS", "ID台账status必须为reused/candidate/confirmed", sheet=sheet, id=row_id, status=status)
+        if not rule:
+            add(errors, "MISSING_ID_ALLOCATION_RULE", "ID台账必须写明B1或策划构成规则", sheet=sheet, id=row_id)
+        if parent_id is not None and (not isinstance(parent_id, int) or isinstance(parent_id, bool) or not (0 < parent_id <= INT32_MAX)):
+            add(errors, "BAD_ID_ALLOCATION_PARENT", "parent_id必须为空或Int32范围内的正整数", sheet=sheet, id=row_id, parent_id=parent_id)
+        if allocation.get("collision_checked") is not True:
+            add(errors, "ID_COLLISION_NOT_CHECKED", "ID台账必须明确collision_checked=true", sheet=sheet, id=row_id)
+
+        workbook_key = declared_sheets.get(sheet)
+        if not workbook_key:
+            add(errors, "ID_ALLOCATION_SHEET_NOT_DECLARED", "ID台账中的Sheet必须列入工作簿归属计划", sheet=sheet, id=row_id)
+            continue
+        allocation_key = (sheet, row_id)
+        if allocation_key in seen_allocations:
+            add(errors, "DUPLICATE_ID_ALLOCATION", "同一Sheet和ID在台账中重复", sheet=sheet, id=row_id)
+            continue
+        seen_allocations.add(allocation_key)
+        workbook_path = workbook_paths[workbook_key]
+        wb = load_workbook(workbook_path, read_only=True, data_only=False)
+        matches = rows_for_id(wb[sheet], row_id) if sheet in wb.sheetnames else []
+        wb.close()
+        if len(matches) != 1:
+            add(errors, "ID_ALLOCATION_ROW_NOT_FOUND", "ID台账中的ID在交付工作簿中必须且只能存在一行", path=str(workbook_path), sheet=sheet, id=row_id, matches=len(matches))
+
     if len(feature_entries) != 1:
         add(errors, "FEATURE_WORKBOOK_FRAGMENTATION", "同一个feature_key必须且只能有一个主功能工作簿", feature_key=feature_key, feature_workbook_count=len(feature_entries))
 
@@ -233,6 +294,7 @@ def main() -> int:
         "feature_key": feature_key,
         "workbook_count": len(workbooks),
         "feature_workbook_count": len(feature_entries),
+        "id_allocation_count": len(id_allocations),
         "error_count": len(errors),
         "warning_count": len(warnings),
         "errors": errors,

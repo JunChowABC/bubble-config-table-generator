@@ -8,6 +8,19 @@
   "requested_output_path": "D:/Bubble/指定输出目录",
   "resolved_output_directory": "D:/Bubble/指定输出目录",
   "feature_key": "gacha-event",
+  "id_allocations": [
+    {
+      "sheet": "tGacha",
+      "id": 990001,
+      "scope": "module",
+      "kind": "test",
+      "allocation_rule": "B1: 3 + 活动模块[3] + 序号[2] + 插入位[1]",
+      "parent_id": null,
+      "source": "A",
+      "status": "candidate",
+      "collision_checked": true
+    }
+  ],
   "workbooks": [
     {
       "path": "C_抽卡表_tGachaPool.xlsx",
@@ -53,6 +66,7 @@
 - `requested_output_path`：用户原始指定值；未指定时为 `null`。
 - `resolved_output_directory`：实际写入目录的绝对路径。
 - `feature_key`：同一系统功能使用同一个稳定键。
+- `id_allocations`：本次新增或修改的每个 ID 的分配台账；不能只在 xlsx 中出现数字而没有构成依据。
 - `workbooks[].path`：相对 `resolved_output_directory` 的文件名，或该目录内的绝对路径。
 - `role=feature`：本功能业务表所在的主功能工作簿。同一个 `feature_key` 必须且只能有一个。
 - `role=shared`：语言、公共条件、公共消耗、公共奖励、公共掉落等既有公共工作簿。
@@ -84,3 +98,19 @@ QA 会验证：
 5. 同一源工作簿不能在清单中复制成多个交付副本。
 
 只复制工作簿但没有 `test_data`，或声明测试行但副本没有实际差异，都视为交付失败。
+
+## ID 分配台账
+
+`id_allocations` 中每条记录对应一个本次新增或修改的 ID：
+
+- `sheet`：ID 所在的正式 Sheet。
+- `id`：B 列主键，必须是 `1..2147483647` 的整数。
+- `scope`：`sheet`、`module` 或 `parent`；默认优先使用 `sheet`，只有 B1 明确共享时才扩大作用域。
+- `kind`：`new`、`derived_child`、`test`、`reused` 或 `updated`。
+- `allocation_rule`：引用 B1 的构成、模块段、父子派生或明确的策划值；不能写泛化的“max+1”。
+- `parent_id`：父子派生时填写父 ID，否则为 `null`。
+- `source`：`S`、`T`、`D` 或 `A`，分别代表策划、现有表证据、推导和 AI 假设。
+- `status`：`reused`、`candidate` 或 `confirmed`。没有正式占号证据时只能是 `candidate`。
+- `collision_checked`：完成源工作簿、输出副本、本次新增行和目标外键检查后填写 `true`。
+
+ID 冲突按作用域判断：同一 Sheet 重复是错误；不同无关 Sheet 复用同一数字不自动报错。复制既有工作簿时，旧 ID 不重排；`updated` 行沿用原 ID。`99`、`9000`、`999999`、`9999999` 等旧表保留值只有在目标 B1 明确允许时才能使用。

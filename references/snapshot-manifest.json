@@ -1,7 +1,7 @@
 {
-  "synced_at_utc": "2026-08-26T08:08:50.374720+00:00",
+  "synced_at_utc": "2026-08-27T02:14:20.916130+00:00",
   "project_root": "D:\\Bubble",
-  "schema_version": "1.3",
+  "schema_version": "1.4",
   "source_summary": {
     "workbooks": 59,
     "all_sheets": 213,
@@ -22,26 +22,26 @@
     {
       "source": "D:\\Bubble\\策划\\配置表\\Bubble配置表_AI生成规范.md",
       "target": "references\\bubble-config-standard.md",
-      "bytes": 35780,
-      "sha256": "2f66dd5f79f79564d345ccc6c76dd010948e004a6f2d4d7a394c3eaa2ab6ad18"
+      "bytes": 38349,
+      "sha256": "7d982b7e4c12cca608f172eabf3cdbbf346e29002475f0fe55369f73d925aea7"
     },
     {
       "source": "D:\\Bubble\\策划\\配置表\\Bubble配置表_全表目录.md",
       "target": "references\\table-catalog.md",
       "bytes": 59605,
-      "sha256": "99f24aecbc55d84fbfeae60ddf028c7eba33d982579fb2a6b8e3226ccfbde7fb"
+      "sha256": "5d37f4cdd113d1b9548476a1ee80d6caeb488a0c3cf0be3999cf2d5917d5637a"
     },
     {
       "source": "D:\\Bubble\\策划\\配置表\\Bubble配置表_AI字段字典.json",
       "target": "references\\field-dictionary.json",
-      "bytes": 983811,
-      "sha256": "338f1a4f7556fd1a4ed2575b60c26f32e4a0d3c459b09df078bfc803cbd0659f"
+      "bytes": 986816,
+      "sha256": "255f52d739e24f000d88cf50d994e9fb012ea7b6cf3fe41a2bd4ec7d790c0a87"
     },
     {
       "source": "D:\\Bubble\\策划\\配置表\\Bubble配置表_AI关系字典.json",
       "target": "references\\relation-dictionary.json",
       "bytes": 221446,
-      "sha256": "af3cd8803bfd3ee133e0c932693b42ecdf75076ae205b6a7fa6ae0d773d19101"
+      "sha256": "5cb2f4b470214ada20e9a8cad7bfdc8fb408ef06a9d8d0b84e9e5ae8ffa517fd"
     }
   ]
 }

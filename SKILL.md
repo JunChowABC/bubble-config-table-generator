@@ -3,7 +3,7 @@ name: bubble-config-table-generator
 description: Generate or modify Bubble project Excel configuration tables from Chinese game-design documents, including requested-path delivery, full copies of existing dependency workbooks, table mapping, ID allocation, tlanguage_cn references, cross-table dependencies, and runnable inferred test data. Use for Bubble 配置表、配表、测试配置、策划案转表、补测试数值 or related xlsx work under 策划/配置表.
 metadata:
   author: Bubble project
-  version: "1.2.0"
+  version: "1.3.0"
 ---
 
 # Bubble 配置表生成器
@@ -89,14 +89,17 @@ metadata:
 - 关联表、数组外键及 `type + param` 分支；
 - 样式、列宽、冻结窗格和 `END` 位置。
 
-先确定用户输出路径，再展示简洁的“绝对输出路径、工作簿归属计划、既有工作簿复制清单、表映射、字段映射、依赖、ID 候选、单位、语言条目、测试值来源、待确认项”。当只有测试数值缺失时不要停下来等待确认，应继续生成。
+先确定用户输出路径，再展示简洁的“绝对输出路径、工作簿归属计划、既有工作簿复制清单、ID 分配台账、表映射、字段映射、依赖、ID 候选、单位、语言条目、测试值来源、待确认项”。当只有测试数值缺失时不要停下来等待确认，应继续生成。
 
 ### 3. 建立依赖和 ID
 
 按拓扑顺序生成：语言/基础字典与资源表 → 公共条件、消耗、奖励、掉落 → 模块主表 → 明细、池、步骤 → 跳转和表现 → 反向校验。
 
-- ID 必须符合各表 B1 规则、为正整数、非 0、表内唯一且不超过 Int32。
-- 不把 `max+1` 当作跨表通用算法，不虚构不存在的外键。
+- ID 必须符合各表 B1 规则、为正整数、非 0、表内唯一且不超过 Int32；默认只要求目标 Sheet 内唯一，除非 B1 明确共享模块或父对象命名空间。
+- 按 B1 保留模块/类型段、固定宽度、父 ID 前缀和插入步长；不压缩、不重排旧 ID。不同无关 Sheet 可以复用同一数字。
+- `max+1` 只在 B1 明确为连续自增且没有保留位或父子构成时使用；不能作为跨表通用算法，不虚构不存在的外键。
+- 测试新增行不能随意使用 `99`、`9000`、`999999`、`9999999` 等旧表保留值，除非目标 B1 明确允许。
+- 每个新增或修改 ID 都必须写入 `generation-manifest.json` 的 `id_allocations`，记录 `scope`、`kind`、`allocation_rule`、`parent_id`、`source`、`status` 和 `collision_checked`。
 - 新增玩家文本先写 `tlanguage_cn.id/words`，业务表只保存语言 ID。
 - 若测试依赖不存在，同时生成带测试标识的依赖行，并记录生成顺序。
 
@@ -123,7 +126,7 @@ metadata:
 
 1. 检查表头、B3/B6、字段唯一性、ID、导出开关、类型和 `END`。
 2. 解析全部 `arr` JSON，检查 `bool`、公式错误和公式缓存。
-3. 检查直接外键、数组外键、动态参数、语言 ID 及 `words` 非空。
+3. 检查直接外键、数组外键、动态参数、语言 ID 及 `words` 非空；逐条核对 `id_allocations` 的作用域、构成规则和碰撞检查。
 4. 检查概率、权重、时间、金额、倍率单位及 `min <= max`。
 5. 渲染或打开所有受影响 Sheet，目视确认文字、列宽、行高、边框、冻结窗格和无裁切。
 6. 运行 `scripts/qa_generated_workbooks.py <xlsx...> --table-dir <Table目录>`；若当前环境没有 Python/openpyxl，执行同等检查并说明替代方式。

@@ -1,6 +1,6 @@
 {
-  "schema_version": "1.3",
-  "snapshot_date": "2026-08-26",
+  "schema_version": "1.4",
+  "snapshot_date": "2026-08-27",
   "source_directory": "D:\\Bubble\\策划\\配置表\\Table",
   "status": "基于当前源表和导表代码的审计版；可作为AI生成约束，不替代策划或程序正式确认",
   "source_summary": {
@@ -50,7 +50,8 @@
     "player_facing_text": "所有玩家可见、需要展示或可能本地化的文本必须配置在tlanguage_cn；其他业务表只保存tlanguage_cn.id，不得直接硬编码中文或其他显示文案",
     "requested_output_path": "用户指定的输出目录或文件路径是硬约束；必须保存到该路径并在交付前按绝对路径回查存在性，不得擅自改到默认目录",
     "feature_workbook_aggregation": "同一系统功能的新增业务表集中在一个xlsx中，以不同Sheet组织；禁止默认每个Sheet生成一个xlsx",
-    "existing_dependency_copy": "本系统测试配置需要使用任何既有配置表时，必须把该表原属xlsx整本复制到指定输出目录，在副本中写入本系统需要的测试数据；禁止直接修改Table源表或只复制单个Sheet"
+    "existing_dependency_copy": "本系统测试配置需要使用任何既有配置表时，必须把该表原属xlsx整本复制到指定输出目录，在副本中写入本系统需要的测试数据；禁止直接修改Table源表或只复制单个Sheet",
+    "id_allocation_ledger": "每个新增或修改的ID都必须在交付清单的id_allocations中记录作用域、构成规则、父ID、来源和状态；不能只写一个看似可用的数字"
   },
   "output_and_workbook_policy": {
     "path_precedence": "用户指定路径 > 本次任务已有输出路径 > 默认策划/配置表/AI生成/<功能名或日期>",
@@ -107,6 +108,50 @@
     },
     "prewrite_manifest": "写xlsx前输出工作簿归属计划：功能、源xlsx、目标xlsx、Sheet、角色(feature/shared/referenced)、动作(created/copied_and_modified)、测试行、归属依据；没有计划不得开始写文件"
   },
+  "id_policy": {
+    "scope_model": "默认按Sheet局部唯一；只有B1或字段说明明确共享命名空间时才按模块/父对象共享。跨不同Sheet出现相同ID是项目现状，不得强行全局去重",
+    "precedence": [
+      "用户/策划明确指定的ID",
+      "目标Sheet B1中的正式构成、模块段、类型段、父子派生规则",
+      "同一Sheet及同一模块的已占用值、保留间隔和相邻行",
+      "目标字段的外键关系与父ID",
+      "仅在上述证据不足时提出候选并标记待策划确认"
+    ],
+    "allocation_steps": [
+      "先复制既有工作簿并读取输出副本与源表的全部已占用ID",
+      "解析B1模板，识别模块/类型/序号/插入位的位宽与步长",
+      "确定ID作用域：Sheet、模块或父对象；建立本次任务的占用集合",
+      "优先填充模板允许的最小未占用候选，保留已有空洞和插入位，不压缩重排旧ID",
+      "父子表按父ID派生子ID并验证前缀/序号关系；独立表不得借用其他表的父ID段",
+      "将每个新增或修改ID写入id_allocations，完成源表/输出副本/关联目标三重碰撞检查"
+    ],
+    "max_plus_one": "只有B1明确为连续自增且没有模块段、插入位、保留值或父子构成时，才可在该Sheet局部使用max+1；其他情况禁止把max+1当通用算法",
+    "reserved_values": "99、9000、999999、9999999等容错/虚构/近似无限值不是全局测试段；除非目标B1明确允许，否则不得用于正式或测试新增行",
+    "test_ids": "测试新增行仍须符合正式B1构成和目标作用域，使用未占用候选；没有测试专用段时标记status=candidate，不把AI假设宣称为正式占号",
+    "existing_ids": "复制既有工作簿时保留所有源ID，不重排、不改写、不为了全局唯一而重编号；updated行沿用原ID",
+    "cross_table_reuse": "关系校验按目标Sheet检查外键是否存在；不同无关Sheet允许复用同一数字ID，不能仅因数值相同就判定冲突",
+    "ledger_fields": [
+      "sheet",
+      "id",
+      "scope",
+      "kind",
+      "allocation_rule",
+      "parent_id",
+      "source",
+      "status",
+      "collision_checked"
+    ],
+    "status_values": [
+      "reused",
+      "candidate",
+      "confirmed"
+    ],
+    "observed_evidence": {
+      "current_tables": 177,
+      "observed_max_id": 909220001,
+      "global_uniqueness": "未采用；多个无关Sheet复用小整数ID，ID应按目标Sheet和B1作用域判断"
+    }
+  },
   "localization_rules": {
     "language_table": "tlanguage_cn",
     "language_id_field": "id",
@@ -138,7 +183,8 @@
   },
   "generation_policy": {
     "style": "优先复制同工作簿或同系统最近的正式t表样式；不要发明全局统一皮肤",
-    "id": "先读目标表B1规则与现有ID分段，再选择未占用ID；不能仅使用max+1",
+    "id": "先读目标表B1规则与现有ID分段，再按Sheet/模块/父对象作用域选择未占用ID；不能仅使用max+1",
+    "id_plan": "每个新增或修改ID都写入id_allocations，记录scope、kind、allocation_rule、parent_id、source、status和collision_checked",
     "references": "引用现有目标ID；若依赖项也新增，先生成基础表再生成业务表",
     "localization": "先提取全部玩家可见文本并配置tlanguage_cn，再让业务表引用语言ID；禁止在业务表str字段中直接写显示文案",
     "formulas": "导出区优先写最终静态值；若必须用公式，交付前用Excel兼容引擎重算并确认缓存值存在",
