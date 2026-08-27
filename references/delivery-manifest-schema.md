@@ -2,9 +2,12 @@
 
 每次生成配置表都要在用户指定输出目录中创建 `generation-manifest.json`。它既是交付说明，也是输出路径、工作簿聚合、既有工作簿完整复制和测试数据差异 QA 的输入。
 
+本文件同时支持两种交付模式：默认的 `full_copy`，以及用户明确要求快速测试/增量交付时使用的 `lightweight_delta`。后者不声称是完整依赖副本，必须在清单中声明合并要求和源文件路径。
+
 ```json
 {
   "schema_version": "1.1",
+  "delivery_mode": "full_copy",
   "requested_output_path": "D:/Bubble/指定输出目录",
   "resolved_output_directory": "D:/Bubble/指定输出目录",
   "feature_key": "gacha-event",
@@ -98,6 +101,35 @@ QA 会验证：
 5. 同一源工作簿不能在清单中复制成多个交付副本。
 
 只复制工作簿但没有 `test_data`，或声明测试行但副本没有实际差异，都视为交付失败。
+
+## 轻量增量字段
+
+当顶层 `delivery_mode` 为 `lightweight_delta` 时：
+
+- 顶层必须填写 `merge_required: true` 和 `merge_instruction`；
+- 主功能工作簿仍使用 `delivery_action=created`，并集中本功能的新增业务 Sheet；
+- 依赖工作簿使用 `delivery_action=delta_created`、`copy_scope=delta_rows_only`，必须填写 `source_path`；
+- 增量工作簿只需包含本次涉及的目标 Sheet、前 6 行协议头、新增/修改行和 `END`，但必须从源工作簿派生并保留 `styles.xml`、主题、列宽、冻结窗格和目标 Sheet 样式；
+- 轻量增量的 `sheets` 只声明实际输出的目标 Sheet，不要求保留源工作簿全部 Sheet；
+- `test_data` 仍逐条记录 B 列 ID、`added/updated` 动作和用途，QA 仍需确认 ID 相对源表的差异；
+- 正式导表前必须按 `merge_instruction` 合并回 `source_path` 指向的源工作簿并重新 QA。
+
+轻量增量依赖条目示例：
+
+```json
+{
+  "path": "J_家具表_tDecoration_增量.xlsx",
+  "role": "referenced",
+  "source_path": "D:/Bubble/策划/配置表/Table/J_家具表_tDecoration.xlsx",
+  "delivery_action": "delta_created",
+  "copy_scope": "delta_rows_only",
+  "sheets": ["tDecorationSet", "tDecoration"],
+  "test_data": [
+    {"sheet": "tDecorationSet", "id": 130099, "operation": "added", "purpose": "快速测试套装"}
+  ],
+  "reason": "只交付本功能新增依赖行，正式导表前合并回源表"
+}
+```
 
 ## ID 分配台账
 

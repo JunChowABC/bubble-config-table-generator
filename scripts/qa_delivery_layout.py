@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import zipfile
 import sys
 from pathlib import Path
 from typing import Any
@@ -14,7 +15,7 @@ except ImportError as exc:
 
 
 VALID_ROLES = {"feature", "shared", "referenced"}
-VALID_ACTIONS = {"created", "copied_and_modified"}
+VALID_ACTIONS = {"created", "copied_and_modified", "delta_created"}
 VALID_TEST_OPERATIONS = {"added", "updated"}
 VALID_ID_SCOPES = {"sheet", "module", "parent"}
 VALID_ID_KINDS = {"new", "derived_child", "test", "reused", "updated"}
@@ -43,6 +44,35 @@ def rows_for_id(worksheet, expected_id: Any) -> list[tuple[Any, ...]]:
     return matches
 
 
+def delta_style_check(source_path: Path, delta_path: Path, sheets: list[str]) -> dict[str, Any]:
+    """确认轻量增量包沿用源工作簿格式，而不是用默认空白工作簿重建。"""
+    result: dict[str, Any] = {"styles_xml_equal": False, "theme_xml_equal": True, "sheet_format_equal": {}}
+    with zipfile.ZipFile(source_path, "r") as source_zip, zipfile.ZipFile(delta_path, "r") as delta_zip:
+        result["styles_xml_equal"] = source_zip.read("xl/styles.xml") == delta_zip.read("xl/styles.xml")
+        theme_name = "xl/theme/theme1.xml"
+        if theme_name in source_zip.namelist():
+            result["theme_xml_equal"] = theme_name in delta_zip.namelist() and source_zip.read(theme_name) == delta_zip.read(theme_name)
+    source_wb = load_workbook(source_path, read_only=False, data_only=False)
+    delta_wb = load_workbook(delta_path, read_only=False, data_only=False)
+    for sheet in sheets:
+        source_ws = source_wb[sheet]
+        delta_ws = delta_wb[sheet]
+        same_headers = True
+        for row in range(1, 8):
+            for col in range(1, source_ws.max_column + 1):
+                source_cell = source_ws.cell(row, col)
+                delta_cell = delta_ws.cell(row, col)
+                if source_cell.value is not None and source_cell.style_id != delta_cell.style_id:
+                    same_headers = False
+        same_widths = all(source_ws.column_dimensions[column].width == delta_ws.column_dimensions[column].width for column in source_ws.column_dimensions)
+        same_freeze = source_ws.freeze_panes == delta_ws.freeze_panes
+        result["sheet_format_equal"][sheet] = same_headers and same_widths and same_freeze
+    source_wb.close()
+    delta_wb.close()
+    result["ok"] = result["styles_xml_equal"] and result["theme_xml_equal"] and all(result["sheet_format_equal"].values())
+    return result
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="验证 Bubble 配置表的输出路径与工作簿聚合")
     parser.add_argument("manifest", type=Path, help="generation-manifest.json")
@@ -58,6 +88,15 @@ def main() -> int:
 
     def add(bucket, code: str, message: str, **details):
         bucket.append({"code": code, "message": message, **details})
+
+    delivery_mode = str(data.get("delivery_mode") or "full_copy").strip()
+    if delivery_mode not in {"full_copy", "lightweight_delta"}:
+        add(errors, "BAD_DELIVERY_MODE", "delivery_mode必须为full_copy或lightweight_delta", delivery_mode=delivery_mode)
+    if delivery_mode == "lightweight_delta":
+        if data.get("merge_required") is not True:
+            add(errors, "DELTA_MERGE_NOT_REQUIRED", "lightweight_delta必须声明merge_required=true")
+        if not str(data.get("merge_instruction") or "").strip():
+            add(errors, "MISSING_DELTA_MERGE_INSTRUCTION", "lightweight_delta必须声明merge_instruction")
 
     resolved_value = data.get("resolved_output_directory")
     if not resolved_value:
@@ -109,9 +148,11 @@ def main() -> int:
 
         action = entry.get("delivery_action")
         if action not in VALID_ACTIONS:
-            add(errors, "BAD_DELIVERY_ACTION", "delivery_action必须为created或copied_and_modified", index=index, delivery_action=action)
-        if role in {"shared", "referenced"} and action != "copied_and_modified":
-            add(errors, "EXISTING_DEPENDENCY_NOT_COPIED", "公共或引用工作簿必须整本复制后在副本中配置测试数据", index=index, role=role)
+            add(errors, "BAD_DELIVERY_ACTION", "delivery_action必须为created、copied_and_modified或delta_created", index=index, delivery_action=action)
+        if role in {"shared", "referenced"} and action not in {"copied_and_modified", "delta_created"}:
+            add(errors, "EXISTING_DEPENDENCY_NOT_DELIVERED", "公共或引用工作簿必须使用copied_and_modified或delta_created", index=index, role=role)
+        if action == "delta_created" and delivery_mode != "lightweight_delta":
+            add(errors, "DELTA_ACTION_WITHOUT_DELTA_MODE", "delta_created只能用于lightweight_delta", index=index)
 
         raw_path = entry.get("path")
         if not raw_path:
@@ -169,17 +210,24 @@ def main() -> int:
         if previous_target and previous_target != path_key:
             add(errors, "SOURCE_COPIED_MULTIPLE_TIMES", "同一源工作簿只能复制成一个交付副本", source_path=str(source_path))
         seen_sources[source_key] = path_key
-        if entry.get("copy_scope") != "full_workbook":
-            add(errors, "PARTIAL_WORKBOOK_COPY", "既有配置必须整本复制，copy_scope必须为full_workbook", path=str(workbook_path))
+        expected_scope = "delta_rows_only" if action == "delta_created" else "full_workbook"
+        if entry.get("copy_scope") != expected_scope:
+            add(errors, "BAD_COPY_SCOPE", f"{action}要求copy_scope={expected_scope}", path=str(workbook_path))
         if not source_path.is_file():
             add(errors, "SOURCE_WORKBOOK_NOT_FOUND", "source_path指向的源工作簿不存在", source_path=str(source_path))
             wb.close()
             continue
 
+        if action == "delta_created":
+            style_result = delta_style_check(source_path, workbook_path, sheets)
+            if not style_result["ok"]:
+                add(errors, "DELTA_STYLE_NOT_INHERITED", "轻量增量工作簿没有完整继承源工作簿的样式包或目标Sheet格式", path=str(workbook_path), style_check=style_result)
+
         source_wb = load_workbook(source_path, read_only=True, data_only=False)
-        missing_source_sheets = sorted(set(source_wb.sheetnames) - actual_sheets)
-        if missing_source_sheets:
-            add(errors, "SOURCE_SHEETS_NOT_PRESERVED", "交付副本没有保留源工作簿的全部Sheet", path=str(workbook_path), missing_sheets=missing_source_sheets)
+        if action == "copied_and_modified":
+            missing_source_sheets = sorted(set(source_wb.sheetnames) - actual_sheets)
+            if missing_source_sheets:
+                add(errors, "SOURCE_SHEETS_NOT_PRESERVED", "交付副本没有保留源工作簿的全部Sheet", path=str(workbook_path), missing_sheets=missing_source_sheets)
 
         test_data = entry.get("test_data")
         if not isinstance(test_data, list) or not test_data:

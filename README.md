@@ -23,9 +23,21 @@ Skill 会读取 Bubble 项目的 `策划/配置表/Table` 及随附规范快照�
 
 公共表和其他系统引用表可以作为独立工作簿交付，但必须有清单中的归属依据。
 
+### 交付模式
+
+默认使用 `full_copy` 完整模式，适合正式交付、直接导表和需要独立运行的配置包。
+
+如果只是快速测试或只想交付本次新增内容，可明确选择 `lightweight_delta` 轻量增量模式：
+
+```text
+按轻量增量模式生成：不复制整本依赖表，只输出本次新增或修改的行；增量工作簿必须继承源表的格式、样式、列宽和冻结窗格，并生成 manifest 和合并说明。
+```
+
+轻量增量包不是完整依赖副本，正式导表前必须按 manifest 的 `source_path` 和 `merge_instruction` 合并回源工作簿。
+
 ### 既有配置表依赖
 
-如果本系统需要使用 `Table` 中已有的配置表：
+`full_copy` 模式下，如果本系统需要使用 `Table` 中已有的配置表：
 
 1. 将该 Sheet 原属的 `.xlsx` 整本复制到指定输出目录。
 2. 保留源工作簿的全部 Sheet、样式、公式、列宽、冻结窗格和既有数据。
@@ -34,6 +46,13 @@ Skill 会读取 Bubble 项目的 `策划/配置表/Table` 及随附规范快照�
 5. 同一个源工作簿只复制一次；如果它是已有主功能工作簿，副本就是该功能唯一的主工作簿。
 
 这些信息通过 `generation-manifest.json` 记录，包括 `source_path`、`delivery_action`、`copy_scope`、测试 Sheet、测试 ID 和用途。
+
+`lightweight_delta` 模式下：
+
+1. 从源工作簿派生 `*_增量.xlsx`，只保留本次涉及的目标 Sheet、6 行协议头、新增/修改行和 `END`。
+2. 必须保留源工作簿的 `styles.xml`、主题、字段顺序、导出标记、列宽、冻结窗格和目标 Sheet 样式；禁止用空白工作簿重新仿制格式。
+3. manifest 使用 `delivery_mode=lightweight_delta`、`delivery_action=delta_created`、`copy_scope=delta_rows_only`，并声明 `merge_required=true`。
+4. 轻量增量只用于快速测试或交接；正式导表前必须合并回源工作簿并重新 QA。
 
 ### 文本与测试数据
 
@@ -101,6 +120,8 @@ python scripts/qa_generated_workbooks.py <工作簿路径...> --table-dir <Bubbl
 
 `qa_delivery_layout.py` 会检查输出路径、主工作簿聚合、既有工作簿是否整本复制、源 Sheet 是否完整保留，以及测试行相对源文件是否实际新增或修改。
 
+当 manifest 的 `delivery_mode` 为 `lightweight_delta` 时，QA 会改为检查增量源路径、目标 Sheet、测试行差异、合并规则，以及源/增量工作簿的样式包、主题、协议头、第 7 行样式、列宽和冻结窗格。
+
 ## 目录说明
 
 | 路径 | 作用 |
@@ -111,6 +132,7 @@ python scripts/qa_generated_workbooks.py <工作簿路径...> --table-dir <Bubbl
 | `references/relation-dictionary.json` | 跨表关系字典 |
 | `references/table-catalog.md` | 工作簿和 Sheet 目录 |
 | `references/delivery-manifest-schema.md` | 输出清单和依赖副本 Schema |
+| `references/lightweight-delta.md` | 轻量增量交付、样式继承和合并规则 |
 | `scripts/qa_delivery_layout.py` | 输出路径、工作簿聚合和副本差异 QA |
 | `scripts/qa_generated_workbooks.py` | 工作簿结构和关系 QA |
 | `scripts/sync_project_references.py` | 从 Bubble 项目重新同步规范快照 |
